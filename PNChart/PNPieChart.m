@@ -10,14 +10,46 @@
 //needed for the expected label size
 #import "PNLineChart.h"
 
+
+@interface SliceLayer : CAShapeLayer
+    @property (nonatomic, assign) CGFloat   percentage;
+    @property (nonatomic, assign) double    startAngle;
+    @property (nonatomic, assign) double    endAngle;
+    @property (nonatomic, assign) BOOL      isSelected;
+
+    typedef NS_ENUM(NSUInteger, SliceLayerAction) {
+        SliceLayerActionExplode,
+        SliceLayerActionUnexplode
+    };
+
+@end
+
+@implementation SliceLayer
+
+- (void)doAction:(SliceLayerAction)action radiusOffset:(CGFloat)raduisOffset animated:(BOOL)animated {
+    CGPoint currPos = self.position;
+    double middleAngle = (self.startAngle + self.endAngle)/2.0;
+
+    CGPoint point;
+    
+    if(!self.isSelected && (action == SliceLayerActionExplode)) {
+        point = CGPointMake(currPos.x + raduisOffset * cos(middleAngle), currPos.y + raduisOffset * sin(middleAngle));
+    } else if(self.isSelected) {
+        point = CGPointMake(currPos.x - raduisOffset * cos(middleAngle), currPos.y - raduisOffset * sin(middleAngle));
+    }
+    self.isSelected = !self.isSelected;
+    self.position = point;
+}
+
+@end
+
+
+
 @interface PNPieChart()
 
 @property (nonatomic) NSArray *items;
 @property (nonatomic) NSArray *endPercentages;
-
 @property (nonatomic) CGFloat outerCircleRadius;
-@property (nonatomic) CGFloat innerCircleRadius;
-
 @property (nonatomic) UIView         *contentView;
 @property (nonatomic) CAShapeLayer   *pieLayer;
 @property (nonatomic) NSMutableArray *descriptionLabels;
@@ -56,7 +88,7 @@
         _descriptionTextShadowColor  = [[UIColor blackColor] colorWithAlphaComponent:0.4];
         _descriptionTextShadowOffset =  CGSizeMake(0, 1);
         _duration = 1.0;
-        
+        self.clipsToBounds = NO;
         [super setupDefaultValues];
         [self loadDefault];
     }
@@ -80,11 +112,20 @@
     
     [_contentView removeFromSuperview];
     _contentView = [[UIView alloc] initWithFrame:self.bounds];
+//    _contentView.clipsToBounds = NO;
     [self addSubview:_contentView];
     _descriptionLabels = [NSMutableArray new];
     
     _pieLayer = [CAShapeLayer layer];
+//    self.layer.masksToBounds = NO;
+//    _contentView.layer.masksToBounds = NO;
+//    _pieLayer.masksToBounds = NO;
     [_contentView.layer addSublayer:_pieLayer];
+    
+    _selectedSliceOffsetRadius = 30.0;
+    _innerCircleRadius  = 0.0;
+    
+//    self.backgroundColor = [UIColor orangeColor];
 }
 
 #pragma mark -
@@ -92,6 +133,7 @@
 - (void)strokeChart{
     [self loadDefault];
     
+//    NSLog(@"Frame :: %@", self.frame);
     PNPieChartDataItem *currentItem;
     for (int i = 0; i < _items.count; i++) {
         currentItem = [self dataItemForIndex:i];
@@ -103,12 +145,13 @@
         CGFloat radius = _innerCircleRadius + (_outerCircleRadius - _innerCircleRadius) / 2;
         CGFloat borderWidth = _outerCircleRadius - _innerCircleRadius;
         
-        CAShapeLayer *currentPieLayer =	[self newCircleLayerWithRadius:radius
+        SliceLayer *currentPieLayer =	[self newCircleLayerWithRadius:radius
                                                            borderWidth:borderWidth
                                                              fillColor:[UIColor clearColor]
                                                            borderColor:currentItem.color
                                                        startPercentage:startPercnetage
                                                          endPercentage:endPercentage];
+//        currentPieLayer.masksToBounds = NO;
         [_pieLayer addSublayer:currentPieLayer];
     }
     
@@ -121,9 +164,16 @@
     }
 }
 
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    _outerCircleRadius  = CGRectGetWidth(self.bounds) / 2;
+}
+
 - (UILabel *)descriptionLabelForItemAtIndex:(NSUInteger)index{
     PNPieChartDataItem *currentDataItem = [self dataItemForIndex:index];
-    CGFloat distance = _innerCircleRadius + (_outerCircleRadius - _innerCircleRadius) / 2;
+//    CGFloat distance = _innerCircleRadius + (_outerCircleRadius - _innerCircleRadius) / 2;
+    
+    CGFloat distance = (_outerCircleRadius/3.0) + (_outerCircleRadius - (_outerCircleRadius/3.0)) / 2;
     CGFloat centerPercentage = ([self startPercentageForItemAtIndex:index] + [self endPercentageForItemAtIndex:index])/ 2;
     CGFloat rad = centerPercentage * 2 * M_PI;
     
@@ -184,14 +234,20 @@
 
 #pragma mark private methods
 
-- (CAShapeLayer *)newCircleLayerWithRadius:(CGFloat)radius
+- (SliceLayer *)newCircleLayerWithRadius:(CGFloat)radius
                                borderWidth:(CGFloat)borderWidth
                                  fillColor:(UIColor *)fillColor
                                borderColor:(UIColor *)borderColor
                            startPercentage:(CGFloat)startPercentage
                              endPercentage:(CGFloat)endPercentage{
-    CAShapeLayer *circle = [CAShapeLayer layer];
     
+    SliceLayer *slice = [SliceLayer layer];
+    
+    slice.startAngle = -M_PI_2 + startPercentage * M_PI * 2.0;
+    slice.endAngle = -M_PI_2 + endPercentage * M_PI * 2.0;
+    slice.percentage = (endPercentage - startPercentage);
+    
+
     CGPoint center = CGPointMake(CGRectGetMidX(self.bounds),CGRectGetMidY(self.bounds));
     
     UIBezierPath *path = [UIBezierPath bezierPathWithArcCenter:center
@@ -200,14 +256,14 @@
                                                       endAngle:M_PI_2 * 3
                                                      clockwise:YES];
     
-    circle.fillColor   = fillColor.CGColor;
-    circle.strokeColor = borderColor.CGColor;
-    circle.strokeStart = startPercentage;
-    circle.strokeEnd   = endPercentage;
-    circle.lineWidth   = borderWidth;
-    circle.path        = path.CGPath;
+    slice.fillColor   = fillColor.CGColor;
+    slice.strokeColor = borderColor.CGColor;
+    slice.strokeStart = startPercentage;
+    slice.strokeEnd   = endPercentage;
+    slice.lineWidth   = borderWidth;
+    slice.path        = path.CGPath;
     
-    return circle;
+    return slice;
 }
 
 - (void)maskChart{
@@ -220,15 +276,26 @@
                                              startPercentage:0
                                                endPercentage:1];
     
-    _pieLayer.mask = maskLayer;
-    CABasicAnimation *animation = [CABasicAnimation animationWithKeyPath:@"strokeEnd"];
-    animation.duration  = _duration;
-    animation.fromValue = @0;
-    animation.toValue   = @1;
-    animation.delegate  = self;
-    animation.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];
-    animation.removedOnCompletion = YES;
-    [maskLayer addAnimation:animation forKey:@"circleAnimation"];
+    
+    
+    [CATransaction begin]; {
+        _pieLayer.mask = maskLayer;
+        
+        __weak PNPieChart *weakSelf = self;
+        [CATransaction setCompletionBlock:^{
+            weakSelf.pieLayer.mask = nil;
+        }];
+    
+        CABasicAnimation *animation = [CABasicAnimation animationWithKeyPath:@"strokeEnd"];
+        animation.duration  = _duration;
+        animation.fromValue = @0;
+        animation.toValue   = @1;
+        animation.delegate  = self;
+        animation.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];
+        animation.removedOnCompletion = YES;
+        [maskLayer addAnimation:animation forKey:@"circleAnimation"];
+        
+        } [CATransaction commit];
 }
 
 - (void)createArcAnimationForLayer:(CAShapeLayer *)layer
@@ -268,10 +335,13 @@
     }
     
     CGFloat percentage = [self findPercentageOfAngleInCircle:circleCenter fromPoint:touchLocation];
+    
     int index = 0;
+    CGFloat percentage2 = [self endPercentageForItemAtIndex:index];
     while (percentage > [self endPercentageForItemAtIndex:index]) {
         index ++;
     }
+
 
     if ([self.delegate respondsToSelector:@selector(userClickedOnPieIndexItem:)]) {
         [self.delegate userClickedOnPieIndexItem:index];
@@ -280,23 +350,11 @@
     if (self.sectorHighlight) {
         [self.sectorHighlight removeFromSuperlayer];
     }
-    PNPieChartDataItem *currentItem = [self dataItemForIndex:index];
     
-    CGFloat red,green,blue,alpha;
-    UIColor *old = currentItem.color;
-    [old getRed:&red green:&green blue:&blue alpha:&alpha];
-    alpha /= 2;
-    UIColor *newColor = [UIColor colorWithRed:red green:green blue:blue alpha:alpha];
+    [self selectSliceAtIndex:index completion:^{
+        
+    }];
     
-    CGFloat startPercnetage = [self startPercentageForItemAtIndex:index];
-    CGFloat endPercentage   = [self endPercentageForItemAtIndex:index];
-    self.sectorHighlight =	[self newCircleLayerWithRadius:_outerCircleRadius + 5
-                                              borderWidth:10
-                                                fillColor:[UIColor clearColor]
-                                              borderColor:newColor
-                                          startPercentage:startPercnetage
-                                            endPercentage:endPercentage];
-    [_contentView.layer addSublayer:self.sectorHighlight];
 }
 
 - (void)touchesBegan:(NSSet *)touches withEvent:(UIEvent *)event
@@ -431,4 +489,31 @@
     [squareImageView setFrame:CGRectMake(originX, originY, size, size)];
     return squareImageView;
 }
+
+- (void)selectSliceAtIndex:(NSInteger)index completion:(void (^)(void))completionBlock {
+    SliceLayer *sliceLayer = (SliceLayer *)[self.pieLayer.sublayers objectAtIndex:index];
+    
+    if(sliceLayer.isSelected) {
+        [sliceLayer doAction:SliceLayerActionUnexplode radiusOffset:_selectedSliceOffsetRadius animated:YES];
+    } else {
+        SliceLayer *selectedSliceLayer = [self selectedSliceLayer];
+        [selectedSliceLayer doAction:SliceLayerActionUnexplode radiusOffset:_selectedSliceOffsetRadius animated:YES];
+        [sliceLayer doAction:SliceLayerActionExplode radiusOffset:_selectedSliceOffsetRadius animated:YES];
+    }
+}
+
+- (SliceLayer *)selectedSliceLayer {
+    __block SliceLayer *selectedLayer = nil;
+    
+    [_pieLayer.sublayers enumerateObjectsUsingBlock:^(id obj, NSUInteger idx, BOOL *stop) {
+        SliceLayer *layer = (SliceLayer *)obj;
+        if(layer.isSelected) {
+            selectedLayer = layer;
+            *stop = YES;
+            return;
+        }
+    }];
+    return selectedLayer;
+}
+
 @end
