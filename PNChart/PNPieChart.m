@@ -15,30 +15,30 @@
     @property (nonatomic, assign) CGFloat   percentage;
     @property (nonatomic, assign) double    startAngle;
     @property (nonatomic, assign) double    endAngle;
-    @property (nonatomic, assign) BOOL      isSelected;
+    @property (nonatomic, assign, getter=isSelected) BOOL      selected;
 
     typedef NS_ENUM(NSUInteger, SliceLayerAction) {
         SliceLayerActionExplode,
-        SliceLayerActionUnexplode
+        SliceLayerActionImplode
     };
 
 @end
 
 @implementation SliceLayer
 
-- (void)doAction:(SliceLayerAction)action radiusOffset:(CGFloat)raduisOffset animated:(BOOL)animated {
-    CGPoint currPos = self.position;
+- (CGPoint)offsetWithAction:(SliceLayerAction)action radiusOffset:(CGFloat)raduisOffset{
     double middleAngle = (self.startAngle + self.endAngle)/2.0;
-
-    CGPoint point;
     
-    if(!self.isSelected && (action == SliceLayerActionExplode)) {
-        point = CGPointMake(currPos.x + raduisOffset * cos(middleAngle), currPos.y + raduisOffset * sin(middleAngle));
-    } else if(self.isSelected) {
-        point = CGPointMake(currPos.x - raduisOffset * cos(middleAngle), currPos.y - raduisOffset * sin(middleAngle));
+    CGPoint offset;
+    
+    if(![self isSelected] && (action == SliceLayerActionExplode)) {
+        offset = CGPointMake(raduisOffset * cos(middleAngle), raduisOffset * sin(middleAngle));
+    } else if([self isSelected] && (action == SliceLayerActionImplode)) {
+        offset = CGPointMake(- raduisOffset * cos(middleAngle), - raduisOffset * sin(middleAngle));
+    } else {
+        offset = CGPointMake(0.0, 0.0);
     }
-    self.isSelected = !self.isSelected;
-    self.position = point;
+    return offset;
 }
 
 @end
@@ -492,28 +492,64 @@
 
 - (void)selectSliceAtIndex:(NSInteger)index completion:(void (^)(void))completionBlock {
     SliceLayer *sliceLayer = (SliceLayer *)[self.pieLayer.sublayers objectAtIndex:index];
+
+    SliceLayerAction action = SliceLayerActionImplode;
     
-    if(sliceLayer.isSelected) {
-        [sliceLayer doAction:SliceLayerActionUnexplode radiusOffset:_selectedSliceOffsetRadius animated:YES];
-    } else {
-        SliceLayer *selectedSliceLayer = [self selectedSliceLayer];
-        [selectedSliceLayer doAction:SliceLayerActionUnexplode radiusOffset:_selectedSliceOffsetRadius animated:YES];
-        [sliceLayer doAction:SliceLayerActionExplode radiusOffset:_selectedSliceOffsetRadius animated:YES];
+    if(!sliceLayer.selected) {
+        NSUInteger selectedIndex = [self selectedSliceIndex];
+        if(selectedIndex != NSNotFound) {
+            [self doAction:SliceLayerActionImplode onSiliceAtIndex:selectedIndex radiusOffset:_selectedSliceOffsetRadius];
+        }
+        action = SliceLayerActionExplode;
     }
+    [self doAction:action onSiliceAtIndex:index radiusOffset:_selectedSliceOffsetRadius];
 }
 
-- (SliceLayer *)selectedSliceLayer {
-    __block SliceLayer *selectedLayer = nil;
+- (void)doAction:(SliceLayerAction)action onSiliceAtIndex:(NSUInteger)index radiusOffset:(CGFloat)raduisOffset {
+    
+    if(index >= [self.pieLayer.sublayers count]) {
+        return;
+    }
+    SliceLayer *sliceLayer = (SliceLayer *)[self.pieLayer.sublayers objectAtIndex:index];
+
+    CGPoint offset = [sliceLayer offsetWithAction:action radiusOffset:raduisOffset];
+    
+    CGPoint layerEndPoint = CGPointMake(sliceLayer.position.x + offset.x, sliceLayer.position.y + offset.y);
+
+    CABasicAnimation *layerAnimation = [CABasicAnimation animationWithKeyPath:@"position"];
+    [layerAnimation setFromValue:[NSValue valueWithCGPoint:sliceLayer.position]];
+    [layerAnimation setToValue:[NSValue valueWithCGPoint:layerEndPoint]];
+    [sliceLayer setPosition:layerEndPoint];
+    [sliceLayer addAnimation:layerAnimation forKey:@"position"];
+    
+    
+    
+    if(index < [self.descriptionLabels count]){
+        UILabel *sliceLabel = (UILabel *)[self.descriptionLabels objectAtIndex:index];
+        CGPoint labelEndPoint = CGPointMake(sliceLabel.layer.position.x + offset.x, sliceLabel.layer.position.y + offset.y);
+        
+        CABasicAnimation *labelAnimation = [CABasicAnimation animationWithKeyPath:@"position"];
+        [labelAnimation setFromValue:[NSValue valueWithCGPoint:sliceLabel.layer.position]];
+        [labelAnimation setToValue:[NSValue valueWithCGPoint:labelEndPoint]];
+        [sliceLabel.layer setPosition:labelEndPoint];
+        [sliceLabel.layer addAnimation:labelAnimation forKey:@"position"];
+    }
+
+    sliceLayer.selected = !sliceLayer.selected;
+}
+
+- (NSUInteger)selectedSliceIndex {
+    __block NSUInteger *selectedIndex = NSNotFound;
     
     [_pieLayer.sublayers enumerateObjectsUsingBlock:^(id obj, NSUInteger idx, BOOL *stop) {
         SliceLayer *layer = (SliceLayer *)obj;
-        if(layer.isSelected) {
-            selectedLayer = layer;
+        if(layer.selected) {
+            selectedIndex = idx;
             *stop = YES;
             return;
         }
     }];
-    return selectedLayer;
+    return selectedIndex;
 }
 
 @end
