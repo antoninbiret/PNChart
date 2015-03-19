@@ -9,6 +9,8 @@
 #import "PNPieChart.h"
 //needed for the expected label size
 #import "PNLineChart.h"
+#import "CALayer+Extension.h"
+#import "PNPieChartPopUp.h"
 
 
 @interface SliceLayer : CAShapeLayer
@@ -53,7 +55,10 @@
 @property (nonatomic) UIView         *contentView;
 @property (nonatomic) CAShapeLayer   *pieLayer;
 @property (nonatomic) NSMutableArray *descriptionLabels;
+@property (nonatomic) NSMutableArray *sliceLayers;
 @property (strong, nonatomic) CAShapeLayer *sectorHighlight;
+@property (strong, nonatomic) CAShapeLayer *overlayLayer;
+@property (strong, nonatomic) CAShapeLayer *popupLayer;
 
 - (void)loadDefault;
 
@@ -112,20 +117,16 @@
     
     [_contentView removeFromSuperview];
     _contentView = [[UIView alloc] initWithFrame:self.bounds];
-//    _contentView.clipsToBounds = NO;
     [self addSubview:_contentView];
     _descriptionLabels = [NSMutableArray new];
-    
+    _sliceLayers = [NSMutableArray new];
     _pieLayer = [CAShapeLayer layer];
-//    self.layer.masksToBounds = NO;
-//    _contentView.layer.masksToBounds = NO;
-//    _pieLayer.masksToBounds = NO;
+
     [_contentView.layer addSublayer:_pieLayer];
     
     _selectedSliceOffsetRadius = 30.0;
     _innerCircleRadius  = 0.0;
-    
-//    self.backgroundColor = [UIColor orangeColor];
+
 }
 
 #pragma mark -
@@ -133,7 +134,6 @@
 - (void)strokeChart{
     [self loadDefault];
     
-//    NSLog(@"Frame :: %@", self.frame);
     PNPieChartDataItem *currentItem;
     for (int i = 0; i < _items.count; i++) {
         currentItem = [self dataItemForIndex:i];
@@ -151,7 +151,7 @@
                                                            borderColor:currentItem.color
                                                        startPercentage:startPercnetage
                                                          endPercentage:endPercentage];
-//        currentPieLayer.masksToBounds = NO;
+        [_sliceLayers addObject:currentPieLayer];
         [_pieLayer addSublayer:currentPieLayer];
     }
     
@@ -171,7 +171,6 @@
 
 - (UILabel *)descriptionLabelForItemAtIndex:(NSUInteger)index{
     PNPieChartDataItem *currentDataItem = [self dataItemForIndex:index];
-//    CGFloat distance = _innerCircleRadius + (_outerCircleRadius - _innerCircleRadius) / 2;
     
     CGFloat distance = (_outerCircleRadius/3.0) + (_outerCircleRadius - (_outerCircleRadius/3.0)) / 2;
     CGFloat centerPercentage = ([self startPercentageForItemAtIndex:index] + [self endPercentageForItemAtIndex:index])/ 2;
@@ -492,7 +491,7 @@
 }
 
 - (void)selectSliceAtIndex:(NSInteger)index completion:(void (^)(void))completionBlock {
-    SliceLayer *sliceLayer = (SliceLayer *)[self.pieLayer.sublayers objectAtIndex:index];
+    SliceLayer *sliceLayer = (SliceLayer *)[self.sliceLayers objectAtIndex:index];
 
     SliceLayerAction action = SliceLayerActionImplode;
     
@@ -508,10 +507,10 @@
 
 - (void)doAction:(SliceLayerAction)action onSiliceAtIndex:(NSUInteger)index radiusOffset:(CGFloat)raduisOffset {
     
-    if(index >= [self.pieLayer.sublayers count]) {
+    if(index >= [self.sliceLayers count]) {
         return;
     }
-    SliceLayer *sliceLayer = (SliceLayer *)[self.pieLayer.sublayers objectAtIndex:index];
+    SliceLayer *sliceLayer = (SliceLayer *)[self.sliceLayers objectAtIndex:index];
 
     CGPoint offset = [sliceLayer offsetWithAction:action radiusOffset:raduisOffset];
     
@@ -536,13 +535,23 @@
         [sliceLabel.layer addAnimation:labelAnimation forKey:@"position"];
     }
 
+    if (action == SliceLayerActionExplode) {
+        [self addOverlayBelowLayer:sliceLayer];
+        
+        [self presentPopUpWithSlideLayer:sliceLayer];
+
+        
+    } else {
+        [self removeOverlay];
+    }
+    
     sliceLayer.selected = !sliceLayer.selected;
 }
 
 - (NSUInteger)selectedSliceIndex {
     __block NSUInteger *selectedIndex = NSNotFound;
     
-    [_pieLayer.sublayers enumerateObjectsUsingBlock:^(id obj, NSUInteger idx, BOOL *stop) {
+    [self.sliceLayers enumerateObjectsUsingBlock:^(id obj, NSUInteger idx, BOOL *stop) {
         SliceLayer *layer = (SliceLayer *)obj;
         if(layer.selected) {
             selectedIndex = idx;
@@ -551,6 +560,86 @@
         }
     }];
     return selectedIndex;
+}
+
+- (void)addOverlayBelowLayer:(SliceLayer *)layer {
+    [self removeOverlay];
+    
+    [self.pieLayer bringSublayerToFront:layer];
+
+    
+    CGFloat radius = _innerCircleRadius + (_outerCircleRadius - _innerCircleRadius) / 2;
+    CGFloat borderWidth = _outerCircleRadius - _innerCircleRadius;
+    
+    self.overlayLayer = [self newCircleLayerWithRadius:radius
+                                                 borderWidth:borderWidth
+                                                   fillColor:[UIColor clearColor]
+                                                 borderColor:[UIColor colorWithRed:1.0 green:1.0 blue:1.0 alpha:0.5]
+                                             startPercentage:0
+                                               endPercentage:1];
+    
+    
+    [self.pieLayer insertSublayer:_overlayLayer below:layer];
+    
+}
+
+- (void)removeOverlay {
+    if(self.overlayLayer) {
+        [self.overlayLayer removeFromSuperlayer];
+    }
+}
+
+- (void)presentPopUpWithSlideLayer:(SliceLayer *)layer {
+    
+    PNPieChartPopUp *pop = [[PNPieChartPopUp alloc] init];
+    
+    if(self.popupLayer) {
+        [_popupLayer removeFromSuperlayer];
+    }
+
+    [layer setAnchorPoint:CGPointMake(0.0, 1.0)];
+    
+    CGPoint center = CGPointMake(CGRectGetMidX(self.bounds),CGRectGetMidY(self.bounds));
+    
+    
+    CGPoint slicePoint = CGPointMake(center.x + layer.position.x, center.y + layer.position.y);
+    
+    CGFloat a = (center.y - slicePoint.y)/(center.x - slicePoint.x);
+    
+    CGFloat b = slicePoint.y - a * slicePoint.x;
+    
+    CGFloat x;
+    CGFloat y;
+    
+    if (a >= 1 || a <= -1) { //Vertical behavior
+        if(slicePoint.y > center.y) {
+            y = center.y - (center.y/2.0);
+        } else {
+            y = center.y + (center.y/2.0);
+        }
+        x = (y-b)/a;
+    } else {
+        if(slicePoint.x > center.x) {
+            x = center.x - (center.x/2.0);
+        } else {
+            x = center.x + (center.x/2.0);
+        }
+        y = a*x + b;
+    }
+
+    CGPoint popupCenter = CGPointMake(x, y);
+    
+    _popupLayer = [CAShapeLayer layer];
+    
+    CGFloat width = self.bounds.size.width/2.0;
+    CGFloat height = self.bounds.size.height/3.0;
+    
+    UIBezierPath *path = [UIBezierPath bezierPathWithRect:CGRectMake(popupCenter.x - width/2.0, popupCenter.y - height/2.0, width, height)];
+    
+    _popupLayer.path = path.CGPath;
+    _popupLayer.fillColor = [UIColor blueColor].CGColor;
+    
+    [_pieLayer addSublayer:_popupLayer];
 }
 
 @end
