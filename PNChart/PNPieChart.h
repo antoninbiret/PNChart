@@ -40,7 +40,7 @@
 
 @property (nonatomic, weak) id<PNChartDelegate> delegate;
 
-/** Default is 10.0. */
+/** Default is 30.0. */
 @property (nonatomic) CGFloat selectedSliceOffsetRadius;
 
 /** Default is 0.0. */
