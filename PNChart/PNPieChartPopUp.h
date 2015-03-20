@@ -8,6 +8,16 @@
 
 #import <UIKit/UIKit.h>
 
+@class PNPieChartDataItem;
+
 @interface PNPieChartPopUp : UIView
+
+@property(nonatomic, strong)UILabel *titleLabel;
+
+@property(nonatomic, strong)UILabel *contentLabel;
+
+-(id)initWithFrame:(CGRect)frame item:(PNPieChartDataItem *)item;
+
+
 
 @end

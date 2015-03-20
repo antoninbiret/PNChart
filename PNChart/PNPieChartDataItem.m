@@ -28,6 +28,15 @@
 	return item;
 }
 
++ (instancetype)dataItemWithValue:(CGFloat)value
+                            color:(UIColor*)color
+                      description:(NSString *)description
+                        textPopUp:(NSString *)popUp {
+    PNPieChartDataItem *item = [PNPieChartDataItem dataItemWithValue:value color:color description:description];
+    item.textPopUp = popUp;
+    return item;
+}
+
 - (void)setValue:(CGFloat)value{
     NSAssert(value >= 0, @"value should >= 0");
     if (value != _value){
