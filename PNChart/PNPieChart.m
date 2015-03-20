@@ -58,7 +58,7 @@
 @property (nonatomic) NSMutableArray *sliceLayers;
 @property (strong, nonatomic) CAShapeLayer *sectorHighlight;
 @property (strong, nonatomic) CAShapeLayer *overlayLayer;
-@property (strong, nonatomic) CAShapeLayer *popupLayer;
+@property (strong, nonatomic) PNPieChartPopUp *popupView;
 
 - (void)loadDefault;
 
@@ -350,14 +350,21 @@
         [self.sectorHighlight removeFromSuperlayer];
     }
     
-    [self selectSliceAtIndex:index completion:^{
-        
-    }];
+    [self selectSliceAtIndex:index];
     
 }
 
-- (void)touchesBegan:(NSSet *)touches withEvent:(UIEvent *)event
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event
 {
+    UIView *hitView = [super hitTest:point withEvent:event];
+    
+    if (_popupView && (hitView == _popupView) && CGRectContainsPoint(_popupView.frame, point)) {
+        return nil;
+    }
+    return hitView;
+}
+
+- (void)touchesBegan:(NSSet *)touches withEvent:(UIEvent *)event {
     for (UITouch *touch in touches) {
         CGPoint touchLocation = [touch locationInView:_contentView];
         [self didTouchAt:touchLocation];
@@ -490,7 +497,7 @@
     return squareImageView;
 }
 
-- (void)selectSliceAtIndex:(NSInteger)index completion:(void (^)(void))completionBlock {
+- (void)selectSliceAtIndex:(NSInteger)index{
     SliceLayer *sliceLayer = (SliceLayer *)[self.sliceLayers objectAtIndex:index];
 
     SliceLayerAction action = SliceLayerActionImplode;
@@ -522,8 +529,6 @@
     [sliceLayer setPosition:layerEndPoint];
     [sliceLayer addAnimation:layerAnimation forKey:@"position"];
     
-    
-    
     if(index < [self.descriptionLabels count]){
         UILabel *sliceLabel = (UILabel *)[self.descriptionLabels objectAtIndex:index];
         CGPoint labelEndPoint = CGPointMake(sliceLabel.layer.position.x + offset.x, sliceLabel.layer.position.y + offset.y);
@@ -537,11 +542,9 @@
 
     if (action == SliceLayerActionExplode) {
         [self addOverlayBelowLayer:sliceLayer];
-        
-        [self presentPopUpWithSlideLayer:sliceLayer];
-
-        
+        [self addPopUpWithSlice:sliceLayer atIndex:index];
     } else {
+        [self removePopUp];
         [self removeOverlay];
     }
     
@@ -589,18 +592,23 @@
     }
 }
 
-- (void)presentPopUpWithSlideLayer:(SliceLayer *)layer {
-    
-    PNPieChartPopUp *pop = [[PNPieChartPopUp alloc] init];
-    
-    if(self.popupLayer) {
-        [_popupLayer removeFromSuperlayer];
+- (void)removePopUp {
+    if(self.popupView) {
+        [_popupView removeFromSuperview];
     }
+}
 
-    [layer setAnchorPoint:CGPointMake(0.0, 1.0)];
+- (void)addPopUpWithSlice:(SliceLayer *)layer atIndex:(NSUInteger)index {
     
+    [self removePopUp];
+    
+    PNPieChartDataItem *item = (PNPieChartDataItem *)[_items objectAtIndex:index];
+    self.popupView = [[PNPieChartPopUp alloc] initWithFrame:[self popUpFrameForSliceLayer:layer] item:item];
+    [self addSubview:_popupView];
+}
+
+- (CGRect)popUpFrameForSliceLayer:(SliceLayer *)layer {
     CGPoint center = CGPointMake(CGRectGetMidX(self.bounds),CGRectGetMidY(self.bounds));
-    
     
     CGPoint slicePoint = CGPointMake(center.x + layer.position.x, center.y + layer.position.y);
     
@@ -611,7 +619,7 @@
     CGFloat x;
     CGFloat y;
     
-    if (a >= 1 || a <= -1) { //Vertical behavior
+    if (a >= 1 || a <= -1) { // ~Vertical line
         if(slicePoint.y > center.y) {
             y = center.y - (center.y/2.0);
         } else {
@@ -626,20 +634,13 @@
         }
         y = a*x + b;
     }
-
-    CGPoint popupCenter = CGPointMake(x, y);
     
-    _popupLayer = [CAShapeLayer layer];
+    CGPoint popupCenter = CGPointMake(x, y);
     
     CGFloat width = self.bounds.size.width/2.0;
     CGFloat height = self.bounds.size.height/3.0;
     
-    UIBezierPath *path = [UIBezierPath bezierPathWithRect:CGRectMake(popupCenter.x - width/2.0, popupCenter.y - height/2.0, width, height)];
-    
-    _popupLayer.path = path.CGPath;
-    _popupLayer.fillColor = [UIColor blueColor].CGColor;
-    
-    [_pieLayer addSublayer:_popupLayer];
+    return CGRectMake(popupCenter.x - width/2.0, popupCenter.y - height/2.0, width, height);
 }
 
 @end
