@@ -17,7 +17,7 @@
     @property (nonatomic, assign) CGFloat   percentage;
     @property (nonatomic, assign) double    startAngle;
     @property (nonatomic, assign) double    endAngle;
-    @property (nonatomic, assign, getter=isSelected) BOOL      selected;
+    @property (nonatomic, assign, getter=isSelected) BOOL   selected;
 
     typedef NS_ENUM(NSUInteger, SliceLayerAction) {
         SliceLayerActionExplode,
@@ -93,6 +93,8 @@
         _descriptionTextShadowColor  = [[UIColor blackColor] colorWithAlphaComponent:0.4];
         _descriptionTextShadowOffset =  CGSizeMake(0, 1);
         _duration = 1.0;
+        _animationDuration = 0.5;
+        _overlayLayer = nil;
         self.clipsToBounds = NO;
         [super setupDefaultValues];
         [self loadDefault];
@@ -245,7 +247,7 @@
     slice.startAngle = -M_PI_2 + startPercentage * M_PI * 2.0;
     slice.endAngle = -M_PI_2 + endPercentage * M_PI * 2.0;
     slice.percentage = (endPercentage - startPercentage);
-    
+    slice.selected = NO;
 
     CGPoint center = CGPointMake(CGRectGetMidX(self.bounds),CGRectGetMidY(self.bounds));
     
@@ -286,7 +288,7 @@
         }];
     
         CABasicAnimation *animation = [CABasicAnimation animationWithKeyPath:@"strokeEnd"];
-        animation.duration  = _duration;
+        animation.duration  = _animationDuration;
         animation.fromValue = @0;
         animation.toValue   = @1;
         animation.delegate  = self;
@@ -502,13 +504,22 @@
     SliceLayerAction action = SliceLayerActionImplode;
     
     if(!sliceLayer.selected) {
+        
         NSUInteger selectedIndex = [self selectedSliceIndex];
-        if(selectedIndex != NSNotFound) {
+        if(selectedIndex != NSNotFound) { // A Slide is already open, we close it
             [self doAction:SliceLayerActionImplode onSiliceAtIndex:selectedIndex radiusOffset:_selectedSliceOffsetRadius];
+            [_pieLayer bringSublayerToFront:_overlayLayer];
+            [self doAction:SliceLayerActionExplode onSiliceAtIndex:index radiusOffset:_selectedSliceOffsetRadius];
+        } else { // No Slice already open, we add overlay
+            [self doAction:SliceLayerActionExplode onSiliceAtIndex:index radiusOffset:_selectedSliceOffsetRadius];
+            [self addOverlayBelowLayer:sliceLayer];
         }
-        action = SliceLayerActionExplode;
+        
+    } else {
+        //Remove overlay & implode
+        [self removeOverlay];
+        [self doAction:SliceLayerActionImplode onSiliceAtIndex:index radiusOffset:_selectedSliceOffsetRadius];
     }
-    [self doAction:action onSiliceAtIndex:index radiusOffset:_selectedSliceOffsetRadius];
 }
 
 - (void)doAction:(SliceLayerAction)action onSiliceAtIndex:(NSUInteger)index radiusOffset:(CGFloat)raduisOffset {
@@ -538,15 +549,13 @@
         [sliceLabel.layer setPosition:labelEndPoint];
         [sliceLabel.layer addAnimation:labelAnimation forKey:@"position"];
     }
-
-    if (action == SliceLayerActionExplode) {
-        [self addOverlayBelowLayer:sliceLayer];
-        [self addPopUpWithSlice:sliceLayer atIndex:index];
-    } else {
-        [self removePopUp];
-        [self removeOverlay];
-    }
     
+    if (action == SliceLayerActionExplode) {
+        [_pieLayer bringSublayerToFront:sliceLayer];
+        [self addPopUpWithSlice:sliceLayer atIndex:index animated:YES];
+    } else {
+        [self removePopUpAnimated:NO];
+    }
     sliceLayer.selected = !sliceLayer.selected;
 }
 
@@ -565,45 +574,58 @@
 }
 
 - (void)addOverlayBelowLayer:(SliceLayer *)layer {
-    [self removeOverlay];
-    
-    [self.pieLayer bringSublayerToFront:layer];
-
     
     CGFloat radius = _innerCircleRadius + (_outerCircleRadius - _innerCircleRadius) / 2;
     CGFloat borderWidth = _outerCircleRadius - _innerCircleRadius;
     
     self.overlayLayer = [self newCircleLayerWithRadius:radius
-                                                 borderWidth:borderWidth
-                                                   fillColor:[UIColor clearColor]
-                                                 borderColor:[UIColor colorWithRed:1.0 green:1.0 blue:1.0 alpha:0.5]
-                                             startPercentage:0
-                                               endPercentage:1];
-    
-    
+                                           borderWidth:borderWidth
+                                             fillColor:[UIColor clearColor]
+                                           borderColor:[UIColor colorWithRed:1.0 green:1.0 blue:1.0 alpha:0.5]
+                                       startPercentage:0
+                                         endPercentage:1];
     [self.pieLayer insertSublayer:_overlayLayer below:layer];
-    
 }
 
 - (void)removeOverlay {
     if(self.overlayLayer) {
         [self.overlayLayer removeFromSuperlayer];
+        _overlayLayer = nil;
     }
 }
 
-- (void)removePopUp {
+- (void)removePopUpAnimated:(BOOL)animated {
     if(self.popupView) {
-        [_popupView removeFromSuperview];
+        if (animated) {
+            __weak PNPieChart *weakSelf = self;
+            [UIView animateWithDuration:_animationDuration animations:^{
+                _popupView.alpha = 0.0;
+            } completion:^(BOOL finished) {
+                [weakSelf.popupView removeFromSuperview];
+                weakSelf.popupView = nil;
+            }];
+        } else {
+            [_popupView removeFromSuperview];
+            _popupView = nil;
+        }
     }
 }
 
-- (void)addPopUpWithSlice:(SliceLayer *)layer atIndex:(NSUInteger)index {
+- (void)addPopUpWithSlice:(SliceLayer *)layer atIndex:(NSUInteger)index animated:(BOOL)animated {
     
-    [self removePopUp];
+    [self removePopUpAnimated:NO];
     
     PNPieChartDataItem *item = (PNPieChartDataItem *)[_items objectAtIndex:index];
     self.popupView = [[PNPieChartPopUp alloc] initWithFrame:[self popUpFrameForSliceLayer:layer] item:item];
     [self addSubview:_popupView];
+    
+    if (animated) {
+        _popupView.alpha = 0.0;
+        [UIView animateWithDuration:_animationDuration animations:^{
+            _popupView.alpha = 1.0;
+        }];
+    }
+    
 }
 
 - (CGRect)popUpFrameForSliceLayer:(SliceLayer *)layer {
