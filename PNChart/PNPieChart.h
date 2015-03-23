@@ -46,6 +46,9 @@
 /** Default is 0.0. */
 @property (nonatomic) CGFloat innerCircleRadius;
 
+/** Default is 0.5. */
+@property (nonatomic) CGFloat animationDuration;
+
 
 - (void)strokeChart;
 

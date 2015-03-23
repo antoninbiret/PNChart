@@ -14,6 +14,8 @@
 
 @interface PNPieChartPopUp ()
 
+@property(nonatomic, strong)UIScrollView *scrollView;
+
 @end
 
 
@@ -37,6 +39,7 @@
 }
 
 - (void)setupSubviewsWithItem:(PNPieChartDataItem *)item {
+    
     self.backgroundColor = item.color;
     
     CGFloat currentY = VERTICAL_MARGIN;
@@ -48,22 +51,26 @@
     
     currentY += _titleLabel.bounds.size.height + VERTICAL_MARGIN;
     
+    self.scrollView = [[UIScrollView alloc] initWithFrame:CGRectMake(0.0, currentY, self.bounds.size.width, self.bounds.size.height - VERTICAL_MARGIN - currentY)];
+    [self addSubview:_scrollView];
+    
     self.contentLabel = [self createLabelWithFontSize:14.0];
     _contentLabel.text = item.textPopUp;
     _contentLabel.numberOfLines = 0;
     _contentLabel.lineBreakMode = NSLineBreakByWordWrapping;
     
-    CGSize maximumLabelSize = CGSizeMake(self.bounds.size.width - 2 * HORIZONTAL_MARGIN, self.bounds.size.height - VERTICAL_MARGIN - currentY);
+    CGSize maximumLabelSize = CGSizeMake(self.bounds.size.width - 2 * HORIZONTAL_MARGIN, MAXFLOAT);
     CGSize expectedSize = [_contentLabel sizeThatFits:maximumLabelSize];
-    _contentLabel.frame = CGRectMake(HORIZONTAL_MARGIN, currentY, expectedSize.width, MIN(expectedSize.height, maximumLabelSize.height));
+    _contentLabel.frame = CGRectMake(HORIZONTAL_MARGIN, 0.0, expectedSize.width, MIN(expectedSize.height, maximumLabelSize.height));
+    [_scrollView addSubview:_contentLabel];
     
-    [self addSubview:_contentLabel];
+    _scrollView.contentSize = CGSizeMake(0.0, _contentLabel.bounds.size.height);
 }
 
 - (UILabel *)createLabelWithFontSize:(CGFloat)fontSize {
     UILabel *label = [[UILabel alloc] init];
     label.textColor = [UIColor whiteColor];
-    label.font  = [UIFont fontWithName:@"Avenir-Medium" size:fontSize];
+    label.font  = [UIFont fontWithName:@"Avenir-Heavy" size:fontSize];
     label.shadowColor = [[UIColor blackColor] colorWithAlphaComponent:0.4];
     label.shadowOffset = CGSizeMake(0, 1);
     label.layer.masksToBounds = NO;
