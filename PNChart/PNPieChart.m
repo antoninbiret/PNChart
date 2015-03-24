@@ -641,18 +641,20 @@
     CGFloat x;
     CGFloat y;
     
+    CGFloat nonAlignOffset = 0.05 * CGRectGetWidth(self.bounds);
+    
     if (a >= 1 || a <= -1) { // ~Vertical line
         if(slicePoint.y > center.y) {
-            y = center.y - (center.y/2.0);
+            y = center.y - (center.y/2.0) - nonAlignOffset;
         } else {
-            y = center.y + (center.y/2.0);
+            y = center.y + (center.y/2.0) + nonAlignOffset;
         }
         x = (y-b)/a;
     } else {
         if(slicePoint.x > center.x) {
-            x = center.x - (center.x/2.0);
+            x = center.x - (center.x/2.0) - nonAlignOffset;
         } else {
-            x = center.x + (center.x/2.0);
+            x = center.x + (center.x/2.0) + nonAlignOffset;
         }
         y = a*x + b;
     }
